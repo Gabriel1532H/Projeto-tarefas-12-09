@@ -1,6 +1,7 @@
+from locale import currency
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required
+from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user, login_required
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 
@@ -30,7 +31,6 @@ class User(UserMixin, db.Model):
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(150))
-    description = db.Column(db.Text)
     status = db.Column(db.String(20), default='Pendente')
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
@@ -52,7 +52,7 @@ def register():
     if request.method == 'POST':
         name = request.form['name']
         email = request.form['email']
-        password = generate_password_hash(request['password'])
+        password = generate_password_hash(request.form['password'])
 
         #verificar se já existe usuario
         
@@ -92,9 +92,63 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for('index'))
+
+
+#listar tarefas -- READ
+@app.route('/tasks')
+@login_required
+def tasks():
+    user_tasks = Task.query.filter_by(user_id=current_user.id).all()
+    return render_template('tasks.html', tasks=user_tasks)
+
+#Adicionar Tarefa
+@app.route('/add_task', methods=['POST', 'GET'])
+@login_required
+def add_task():
+    if request.method == 'POST':
+        title = request.form['title']
+        new_task = Task(title=title, user_id=current_user.id)
+
+        db.session.add(new_task)
+        db.session.commit()
+        flash('Tarefa adicionada com sucesso!', 'success')
+        return  redirect(url_for('tasks'))
+    
+    return render_template('add_tasks.html')
+
+#Atualizar status da tarefa -- UPDATE
+@app.route('/update_task/<int:id>')
+@login_required
+def update_task(id):
+    task = Task.query.get_or_404(id)
+
+    if task.user_id != current_user.id: 
+        flash('Voce não tem permissão para isso!!!!!!', 'danger')
+        return redirect(url_for('tasks'))
+    
+    task.status = "Concluida" if task.status == "Pendente" else "Pendente"
+    db.session.commit()
+    return redirect(url_for('tasks'))
+
+#Deletar tarefa -- DELETE
+@app.route('/delete_task/<int:id>')
+@login_required
+def delete_task(id):
+    task = Task.query.get_or_404(id)
+
+    if task.user_id != current_user.id: 
+        flash('Voce não tem permissão para isso!!!!!!', 'danger')
+        return redirect(url_for('tasks'))
+    
+    db.session.delete(task)
+    db.session.commit()
+    flash('tarefa excluida!!!!!', 'info')
+    return redirect(url_for('tasks'))
+    
 #---------------------------------
 # CRIAR BANCO NA PRIMEIRA EXECUÇÃO
 #---------------------------------
+
 if __name__ == "__main__":
     if not os.path.exists('database.db'):
         with app.app_context():
